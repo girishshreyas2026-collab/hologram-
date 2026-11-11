@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hologram Hand</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+  canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+  video { display: none; }
+  #start {
+    position: fixed; inset: 0; margin: auto; width: 220px; height: 60px;
+    background: transparent; color: #00e5ff; border: 2px solid #00e5ff; border-radius: 30px;
+    font-size: 18px; letter-spacing: 2px; box-shadow: 0 0 20px #00e5ff88;
+  }
+  #status {
+    position: fixed; top: 12px; left: 0; right: 0; text-align: center;
+    color: #00e5ff; font-size: 14px; letter-spacing: 3px; text-shadow: 0 0 8px #00e5ff;
+  }
+  #flip {
+    position: fixed; bottom: 20px; right: 20px; display: none;
+    color: #00e5ff; background: transparent; border: 1px solid #00e5ff;
+    border-radius: 20px; padding: 10px 16px; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<canvas id="canvas"></canvas>
+<div id="status">HOLOGRAM INTERFACE OFFLINE</div>
+<button id="start">START</button>
+<button id="flip">FLIP CAMERA</button>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('start');
+const flipBtn = document.getElementById('flip');
+
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+              [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+const TIPS = [4, 8, 12, 16, 20];
+const CYAN = '#00e5ff';
+
+let facing = 'user';
+let stream = null;
+let hands = null;
+let latest = null;
+let busy = false;
+
+async function startCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+    audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+}
+
+function draw() {
+  const w = canvas.width, h = canvas.height;
+  const mirror = facing === 'user';
+  ctx.save();
+  if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+
+  // dim camera image
+  ctx.globalAlpha = 1;
+  ctx.drawImage(video, 0, 0, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.shadowColor = CYAN;
+  ctx.shadowBlur = 15;
+  ctx.strokeStyle = CYAN;
+  ctx.lineWidth = 3;
+
+  if (latest && latest.length) {
+    for (const lm of latest) {
+      const p = lm.map(pt => [pt.x * w, pt.y * h]);
+
+      // bones
+      ctx.beginPath();
+      for (const [a, b] of CONN) { ctx.moveTo(p[a][0], p[a][1]); ctx.lineTo(p[b][0], p[b][1]); }
+      ctx.stroke();
+
+      // joints
+      ctx.fillStyle = '#fff';
+      for (const q of p) { ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 7); ctx.fill(); }
+
+      // fingertip rings
+      ctx.lineWidth = 2;
+      for (const t of TIPS) { ctx.beginPath(); ctx.arc(p[t][0], p[t][1], 14, 0, 7); ctx.stroke(); }
+
+      // thumb-index pinch line + distance
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(p[4][0], p[4][1]); ctx.lineTo(p[8][0], p[8][1]); ctx.stroke();
+      const d = Math.round(Math.hypot(p[4][0] - p[8][0], p[4][1] - p[8][1]));
+      ctx.restore(); ctx.save();               // un-mirror text so it's readable
+      const mx = (p[4][0] + p[8][0]) / 2, my = (p[4][1] + p[8][1]) / 2;
+      const tx = mirror ? w - mx : mx;
+      ctx.fillStyle = CYAN; ctx.shadowColor = CYAN; ctx.shadowBlur = 8;
+      ctx.font = '16px system-ui';
+      ctx.fillText(d + 'px', tx + 8, my);
+      ctx.restore(); ctx.save();
+      if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+      ctx.shadowColor = CYAN; ctx.shadowBlur = 15; ctx.strokeStyle = CYAN; ctx.lineWidth = 3;
+    }
+  }
+  ctx.restore();
+}
+
+async function loop() {
+  if (!busy && video.readyState >= 2) {
+    busy = true;
+    try { await hands.send({ image: video }); } catch (e) {}
+    busy = false;
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+startBtn.onclick = async () => {
+  startBtn.style.display = 'none';
+  statusEl.textContent = 'LOADING...';
+  try {
+    await startCamera();
+    hands = new Hands({
+      locateFile: f => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + f
+    });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+    hands.onResults(r => { latest = r.multiHandLandmarks; });
+    statusEl.textContent = 'HOLOGRAM INTERFACE ONLINE';
+    flipBtn.style.display = 'block';
+    loop();
+  } catch (e) {
+    statusEl.textContent = 'CAMERA ERROR: ' + e.message;
+    startBtn.style.display = 'block';
+  }
+};
+
+flipBtn.onclick = async () => {
+  facing = facing === 'user' ? 'environment' : 'user';
+  latest = null;
+  await startCamera();
+};
+</script>
+</body>
+</html>
