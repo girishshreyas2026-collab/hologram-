@@ -3,152 +3,183 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Hologram Hand</title>
+<title>Hologram Hand MAX</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
-  canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
-  video { display: none; }
-  #start {
-    position: fixed; inset: 0; margin: auto; width: 220px; height: 60px;
-    background: transparent; color: #00e5ff; border: 2px solid #00e5ff; border-radius: 30px;
-    font-size: 18px; letter-spacing: 2px; box-shadow: 0 0 20px #00e5ff88;
-  }
-  #status {
-    position: fixed; top: 12px; left: 0; right: 0; text-align: center;
-    color: #00e5ff; font-size: 14px; letter-spacing: 3px; text-shadow: 0 0 8px #00e5ff;
-  }
-  #flip {
-    position: fixed; bottom: 20px; right: 20px; display: none;
-    color: #00e5ff; background: transparent; border: 1px solid #00e5ff;
-    border-radius: 20px; padding: 10px 16px; font-size: 14px;
-  }
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace;-webkit-tap-highlight-color:transparent}
+  canvas{width:100vw;height:100dvh;object-fit:contain;display:block}
+  video{display:none}
+  #start{position:fixed;inset:0;margin:auto;width:240px;height:64px;background:#00e5ff14;color:#00e5ff;border:2px solid #00e5ff;border-radius:32px;font:600 18px ui-monospace,monospace;letter-spacing:3px;box-shadow:0 0 24px #00e5ff99}
+  #status{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;text-align:center;color:#00e5ff;font-size:13px;letter-spacing:3px;text-shadow:0 0 8px #00e5ff;pointer-events:none}
+  #bar{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);left:0;right:0;display:none;justify-content:center;gap:10px}
+  #bar button{color:#00e5ff;background:#00000088;border:1px solid #00e5ff;border-radius:18px;padding:10px 16px;font:13px ui-monospace,monospace;letter-spacing:1px}
+  #help{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 70px);left:0;right:0;text-align:center;color:#00e5ffaa;font-size:11px;display:none;pointer-events:none;padding:0 16px}
 </style>
 </head>
 <body>
 <video id="video" playsinline muted></video>
 <canvas id="canvas"></canvas>
 <div id="status">HOLOGRAM INTERFACE OFFLINE</div>
+<div id="help">PINCH = DRAW IN AIR &bull; FIST = CLEAR &bull; TWO HANDS = LINK</div>
 <button id="start">START</button>
-<button id="flip">FLIP CAMERA</button>
+<div id="bar"><button id="theme">THEME</button><button id="clear">CLEAR</button><button id="flip">FLIP CAM</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
 <script>
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const statusEl = document.getElementById('status');
-const startBtn = document.getElementById('start');
-const flipBtn = document.getElementById('flip');
+const $=id=>document.getElementById(id);
+const video=$('video'),cv=$('canvas'),ctx=cv.getContext('2d');
+const THEMES=['#00e5ff','#ffb300','#39ff88','#ff3d6e'];
+const CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+const TIPS=[4,8,12,16,20];
+let ti=0,C=THEMES[0],facing='user',stream=null,hands=null,latest=[],busy=false,running=false;
+let trails={},parts=[],strokes=[[]],fistT=0,last=performance.now(),fps=60;
+const D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 
-const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
-              [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
-const TIPS = [4, 8, 12, 16, 20];
-const CYAN = '#00e5ff';
+function analyze(lm,w,h,mir){
+  const p=lm.map(q=>({x:(mir?1-q.x:q.x)*w,y:q.y*h}));
+  const palm=D(p[0],p[9]);
+  const e=[D(p[4],p[17])>D(p[3],p[17])*1.02];
+  for(const t of [8,12,16,20])e.push(D(p[0],p[t])>D(p[0],p[t-2])*1.05);
+  const n=e.filter(Boolean).length;
+  const pinch=D(p[4],p[8])<palm*0.38;
+  const noF=!e[1]&&!e[2]&&!e[3]&&!e[4];
+  let g=pinch?'PINCH':noF?'FIST':n==5?'OPEN PALM':(e[1]&&!e[2]&&!e[3]&&!e[4])?'POINT':(e[1]&&e[2]&&!e[3]&&!e[4])?'PEACE':n+' FINGERS';
+  const cx=(p[0].x+p[5].x+p[9].x+p[13].x+p[17].x)/5,cy=(p[0].y+p[5].y+p[9].y+p[13].y+p[17].y)/5;
+  return{p,palm,n,pinch,fist:noF&&!pinch,g,cx,cy};
+}
+function hex(x,y,r,rot){ctx.beginPath();for(let i=0;i<6;i++){const a=rot+i*Math.PI/3;ctx[i?'lineTo':'moveTo'](x+r*Math.cos(a),y+r*Math.sin(a));}ctx.closePath();ctx.stroke();}
+function reticle(x,y,r,rot){for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(x,y,r,rot+i*2.094,rot+i*2.094+1.2);ctx.stroke();}}
+function orb(x,y,r,t){
+  ctx.save();ctx.globalAlpha=0.14;ctx.fillStyle=C;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();ctx.restore();
+  ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.stroke();
+  for(let i=0;i<3;i++){ctx.beginPath();ctx.ellipse(x,y,r,Math.abs(Math.cos(t+i*1.05))*r*0.9+1,i*1.05+t*0.3,0,7);ctx.stroke();}
+}
+function bracket(x,y,sx,sy,l){ctx.beginPath();ctx.moveTo(x,y+sy*l);ctx.lineTo(x,y);ctx.lineTo(x+sx*l,y);ctx.stroke();}
 
-let facing = 'user';
-let stream = null;
-let hands = null;
-let latest = null;
-let busy = false;
-
-async function startCamera() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
-    audio: false
-  });
-  video.srcObject = stream;
-  await video.play();
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+function drawBg(w,h,t){
+  ctx.save();
+  if(facing==='user'){ctx.translate(w,0);ctx.scale(-1,1);}
+  ctx.drawImage(video,0,0,w,h);ctx.restore();
+  ctx.fillStyle='rgba(0,8,14,.76)';ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle=C;ctx.globalAlpha=0.07;ctx.lineWidth=1;ctx.beginPath();
+  for(let x=0;x<w;x+=40){ctx.moveTo(x,0);ctx.lineTo(x,h);}
+  for(let y=0;y<h;y+=40){ctx.moveTo(0,y);ctx.lineTo(w,y);}
+  ctx.stroke();
+  ctx.globalAlpha=0.06;ctx.fillStyle='#000';
+  for(let y=0;y<h;y+=4)ctx.fillRect(0,y,w,1);
+  const sy=(t*110)%(h+80)-80;
+  const g=ctx.createLinearGradient(0,sy,0,sy+80);g.addColorStop(0,'transparent');g.addColorStop(1,C);
+  ctx.globalAlpha=0.12;ctx.fillStyle=g;ctx.fillRect(0,sy,w,80);
+  ctx.globalAlpha=1;
 }
 
-function draw() {
-  const w = canvas.width, h = canvas.height;
-  const mirror = facing === 'user';
-  ctx.save();
-  if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
-
-  // dim camera image
-  ctx.globalAlpha = 1;
-  ctx.drawImage(video, 0, 0, w, h);
-  ctx.fillStyle = 'rgba(0,0,0,0.75)';
-  ctx.fillRect(0, 0, w, h);
-
-  ctx.shadowColor = CYAN;
-  ctx.shadowBlur = 15;
-  ctx.strokeStyle = CYAN;
-  ctx.lineWidth = 3;
-
-  if (latest && latest.length) {
-    for (const lm of latest) {
-      const p = lm.map(pt => [pt.x * w, pt.y * h]);
-
-      // bones
-      ctx.beginPath();
-      for (const [a, b] of CONN) { ctx.moveTo(p[a][0], p[a][1]); ctx.lineTo(p[b][0], p[b][1]); }
-      ctx.stroke();
-
-      // joints
-      ctx.fillStyle = '#fff';
-      for (const q of p) { ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 7); ctx.fill(); }
-
-      // fingertip rings
-      ctx.lineWidth = 2;
-      for (const t of TIPS) { ctx.beginPath(); ctx.arc(p[t][0], p[t][1], 14, 0, 7); ctx.stroke(); }
-
-      // thumb-index pinch line + distance
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(p[4][0], p[4][1]); ctx.lineTo(p[8][0], p[8][1]); ctx.stroke();
-      const d = Math.round(Math.hypot(p[4][0] - p[8][0], p[4][1] - p[8][1]));
-      ctx.restore(); ctx.save();               // un-mirror text so it's readable
-      const mx = (p[4][0] + p[8][0]) / 2, my = (p[4][1] + p[8][1]) / 2;
-      const tx = mirror ? w - mx : mx;
-      ctx.fillStyle = CYAN; ctx.shadowColor = CYAN; ctx.shadowBlur = 8;
-      ctx.font = '16px system-ui';
-      ctx.fillText(d + 'px', tx + 8, my);
-      ctx.restore(); ctx.save();
-      if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
-      ctx.shadowColor = CYAN; ctx.shadowBlur = 15; ctx.strokeStyle = CYAN; ctx.lineWidth = 3;
-    }
+function drawHand(H,idx,t){
+  const p=H.p;
+  ctx.save();ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=18;ctx.lineWidth=3;ctx.lineCap='round';
+  // bones
+  ctx.beginPath();for(const[a,b]of CONN){ctx.moveTo(p[a].x,p[a].y);ctx.lineTo(p[b].x,p[b].y);}ctx.stroke();
+  // joints
+  ctx.fillStyle='#fff';for(const q of p){ctx.beginPath();ctx.arc(q.x,q.y,3,0,7);ctx.fill();}
+  // palm rings
+  ctx.lineWidth=1.5;hex(H.cx,H.cy,H.palm*0.85,t*0.8);hex(H.cx,H.cy,H.palm*0.55,-t*1.2);
+  ctx.beginPath();ctx.arc(H.cx,H.cy,H.palm*1.1,0,7);ctx.setLineDash([4,10]);ctx.stroke();ctx.setLineDash([]);
+  // fingertip reticles + trails
+  for(const tp of TIPS){
+    ctx.lineWidth=2;reticle(p[tp].x,p[tp].y,H.palm*0.2+4,t*3+tp);
+    const k=idx+'-'+tp;const tr=trails[k]||(trails[k]=[]);tr.push({x:p[tp].x,y:p[tp].y});if(tr.length>16)tr.shift();
+    for(let i=1;i<tr.length;i++){ctx.globalAlpha=i/tr.length*0.7;ctx.lineWidth=1+i/4;ctx.beginPath();ctx.moveTo(tr[i-1].x,tr[i-1].y);ctx.lineTo(tr[i].x,tr[i].y);ctx.stroke();}
+    ctx.globalAlpha=1;
+    if(parts.length<500)for(let j=0;j<2;j++)parts.push({x:p[tp].x,y:p[tp].y,vx:(Math.random()-.5)*2.2,vy:(Math.random()-.5)*2.2-0.4,l:1});
   }
+  // pinch line + orb
+  const a=p[4],b=p[8],d=D(a,b),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+  ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  if(H.pinch){ctx.lineWidth=1.5;orb(mx,my,Math.max(d*0.9,10)+8,t);}
+  ctx.shadowBlur=8;ctx.fillStyle=C;ctx.font='13px ui-monospace,monospace';
+  ctx.fillText(Math.round(d)+'px',mx+10,my-8);
+  // gesture label
+  const lx=H.cx+H.palm*1.15,ly=H.cy-H.palm*1.1;
+  ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(H.cx,H.cy);ctx.lineTo(lx,ly);ctx.lineTo(lx+90,ly);ctx.stroke();
+  ctx.font='bold 14px ui-monospace,monospace';ctx.fillText(H.g,lx+4,ly-6);
+  ctx.font='11px ui-monospace,monospace';ctx.fillText('FINGERS: '+H.n,lx+4,ly+13);
   ctx.restore();
 }
 
-async function loop() {
-  if (!busy && video.readyState >= 2) {
-    busy = true;
-    try { await hands.send({ image: video }); } catch (e) {}
-    busy = false;
+function draw(now){
+  const w=cv.width,h=cv.height,dt=now-last;last=now;
+  fps=fps*0.9+(1000/Math.max(dt,1))*0.1;
+  const t=now/1000;
+  drawBg(w,h,t);
+  const mir=facing==='user';
+  const hs=latest.map(l=>analyze(l,w,h,mir));
+  // air drawing & fist clear
+  let fist=false,drew=false;
+  for(const H of hs){
+    if(H.fist)fist=true;
+    if(H.pinch&&!drew){drew=true;const s=strokes[strokes.length-1];s.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2});if(s.length>600)s.shift();}
   }
-  draw();
-  requestAnimationFrame(loop);
+  if(!drew&&strokes[strokes.length-1].length)strokes.push([]);
+  if(strokes.length>30)strokes.shift();
+  if(fist){fistT+=dt;if(fistT>700){strokes=[[]];fistT=0;}}else fistT=0;
+  // strokes
+  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
+  for(const s of strokes){if(s.length<2)continue;
+    ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=18;ctx.lineWidth=5;
+    ctx.beginPath();ctx.moveTo(s[0].x,s[0].y);for(let i=1;i<s.length;i++)ctx.lineTo(s[i].x,s[i].y);ctx.stroke();
+    ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();}
+  ctx.restore();
+  // hands
+  hs.forEach((H,i)=>drawHand(H,i,t));
+  // two-hand link
+  if(hs.length>=2){
+    const a=hs[0].p[8],b=hs[1].p[8],d=D(a,b),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+    ctx.save();ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=16;ctx.lineWidth=2;
+    ctx.setLineDash([10,8]);ctx.lineDashOffset=-t*40;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
+    hex(mx,my,d*0.22+6,t);orb(mx,my,d*0.12+4,t*1.5);
+    ctx.fillStyle=C;ctx.font='13px ui-monospace,monospace';ctx.fillText('LINK '+Math.round(d)+'px',mx+d*0.25,my-d*0.25);
+    ctx.restore();
+  }
+  // particles
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.fillStyle=C;
+  for(let i=parts.length-1;i>=0;i--){const q=parts[i];q.x+=q.vx;q.y+=q.vy;q.l-=0.03;if(q.l<=0){parts.splice(i,1);continue;}
+    ctx.globalAlpha=q.l;ctx.fillRect(q.x,q.y,2.5,2.5);}
+  ctx.restore();
+  // HUD
+  ctx.save();ctx.strokeStyle=C;ctx.fillStyle=C;ctx.shadowColor=C;ctx.shadowBlur=10;ctx.lineWidth=2;
+  const m=14,L=34;bracket(m,m,1,1,L);bracket(w-m,m,-1,1,L);bracket(m,h-m,1,-1,L);bracket(w-m,h-m,-1,-1,L);
+  ctx.font='bold 15px ui-monospace,monospace';ctx.fillText('HOLO-OS // HAND TRACKER',m+8,m+26);
+  ctx.font='12px ui-monospace,monospace';
+  ctx.fillText('FPS  '+Math.round(fps),m+8,m+46);
+  ctx.fillText('HANDS '+hs.length,m+8,m+62);
+  hs.forEach((H,i)=>ctx.fillText('H'+(i+1)+': '+H.g,m+8,m+78+i*16));
+  ctx.restore();
 }
 
-startBtn.onclick = async () => {
-  startBtn.style.display = 'none';
-  statusEl.textContent = 'LOADING...';
-  try {
+async function startCamera(){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false});
+  video.srcObject=stream;await video.play();
+  cv.width=video.videoWidth;cv.height=video.videoHeight;
+}
+async function loop(now){
+  if(!busy&&video.readyState>=2){busy=true;try{await hands.send({image:video});}catch(e){}busy=false;}
+  draw(now||performance.now());
+  requestAnimationFrame(loop);
+}
+$('start').onclick=async()=>{
+  $('start').style.display='none';$('status').textContent='LOADING MODEL...';
+  try{
     await startCamera();
-    hands = new Hands({
-      locateFile: f => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + f
-    });
-    hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-    hands.onResults(r => { latest = r.multiHandLandmarks; });
-    statusEl.textContent = 'HOLOGRAM INTERFACE ONLINE';
-    flipBtn.style.display = 'block';
-    loop();
-  } catch (e) {
-    statusEl.textContent = 'CAMERA ERROR: ' + e.message;
-    startBtn.style.display = 'block';
-  }
+    hands=new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/'+f});
+    hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:0.6,minTrackingConfidence:0.6});
+    hands.onResults(r=>{latest=r.multiHandLandmarks||[];if(!running){running=true;$('status').style.display='none';}});
+    $('bar').style.display='flex';$('help').style.display='block';
+    setTimeout(()=>{$('help').style.display='none'},8000);
+    requestAnimationFrame(loop);
+  }catch(e){$('status').textContent='CAMERA ERROR: '+e.message;$('start').style.display='block';}
 };
-
-flipBtn.onclick = async () => {
-  facing = facing === 'user' ? 'environment' : 'user';
-  latest = null;
-  await startCamera();
-};
+$('flip').onclick=async()=>{facing=facing==='user'?'environment':'user';latest=[];trails={};await startCamera();};
+$('clear').onclick=()=>{strokes=[[]];parts=[];};
+$('theme').onclick=()=>{ti=(ti+1)%THEMES.length;C=THEMES[ti];};
 </script>
 </body>
 </html>
