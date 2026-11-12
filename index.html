@@ -17,16 +17,16 @@
 #bar button{padding:8px 12px;font-size:12px}
 #help{bottom:calc(env(safe-area-inset-bottom,0px) + 150px)}
 #tools{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);left:0;right:0;display:none;justify-content:center;flex-wrap:wrap;gap:6px;padding:0 8px}
-#tools button{color:#fff;background:#000000aa;border:1px solid #00e5ffaa;border-radius:14px;padding:7px 9px;font:11px ui-monospace,monospace}
+#tools button{color:#fff;background:#000000aa;border:1px solid #00e5ffaa;border-radius:14px;padding:8px 11px;font:12px ui-monospace,monospace}
 </style>
 </head>
 <body>
 <video id="video" playsinline muted></video>
 <canvas id="canvas"></canvas>
 <div id="status">HOLOGRAM INTERFACE OFFLINE</div>
-<div id="help">CLAP x2 = OPEN SUIT LAB &bull; CLAP x1 = CLOSE &bull; PINCH+DRAG = ROTATE</div>
+<div id="help">CLAP x2 = OPEN SPHERE &bull; CLAP x1 = CLOSE &bull; PINCH = GRAB</div>
 <button id="start">START</button>
-<div id="tools"><button data-a="prev">◀ PART</button><button data-a="next">PART ▶</button><button data-a="col">COLOR</button><button data-a="sty">STYLE</button><button data-a="vis">SHOW/HIDE</button><button data-a="solid">SOLID</button><button data-a="TECH">TECH</button><button data-a="STEALTH">STEALTH</button><button data-a="SPEED">SPEED</button><button data-a="GUARD">GUARD</button><button data-a="name">NAME</button><button data-a="save">SAVE</button></div>
+<div id="tools"><button data-a="cube">+CUBE</button><button data-a="orb">+ORB</button><button data-a="pyr">+PYR</button><button data-a="ring">+RING</button><button data-a="col">COLOR</button><button data-a="dup">DUP</button><button data-a="del">DEL</button></div>
 <div id="bar"><button id="sphere">SPHERE</button><button id="theme">THEME</button><button id="flip">FLIP CAM</button><button id="sens">SENS: MED</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
@@ -75,51 +75,22 @@ function drawHand(H){
   if(H.pinch){ctx.lineWidth=2;ctx.beginPath();ctx.arc((p[4].x+p[8].x)/2,(p[4].y+p[8].y)/2,14,0,7);ctx.stroke();}
   ctx.restore();
 }
-/* ===== SUIT LAB ===== */
-const OC=['#ff2d3a','#ffc400','#2f7bff','#f2f2f2','#7a8599','#2fe08a','#b05cff','#ff7a1a'];
+/* ===== SPHERE WORKSPACE ===== */
+const OC=['#00e5ff','#ffb300','#39ff88','#ff3d6e','#c77dff','#ffffff'];
 const cir=(n,f)=>Array.from({length:n+1},(_,i)=>{const a=i/n*6.2832;return f(Math.cos(a),Math.sin(a));});
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const both=f=>[...f(1),...f(-1)];
-const ell=(x,y,z,a,b,c)=>{const L=[];
-  for(let i=1;i<5;i++){const v=i/5*Math.PI,r=Math.sin(v),yy=Math.cos(v)*b;L.push(cir(14,(co,si)=>[x+co*a*r,y+yy,z+si*c*r]));}
-  for(let k=0;k<3;k++){const ph=k*Math.PI/3,cp=Math.cos(ph),sp=Math.sin(ph);L.push(cir(14,(co,si)=>[x+a*si*cp,y+b*co,z+c*si*sp]));}
-  return L;};
-const cyl=(x,y,z,r1,r2,h)=>{const L=[];
-  for(let i=0;i<=3;i++){const f=i/3,r=r1+(r2-r1)*f,yy=y-h/2+h*f;L.push(cir(12,(co,si)=>[x+co*r,yy,z+si*r]));}
-  for(let j=0;j<4;j++){const a=j*Math.PI/2;L.push([[x+Math.cos(a)*r1,y-h/2,z+Math.sin(a)*r1],[x+Math.cos(a)*r2,y+h/2,z+Math.sin(a)*r2]]);}
-  return L;};
-const star=r=>Array.from({length:11},(_,i)=>{const a=i*Math.PI/5-Math.PI/2,q=i%2?r*.45:r;return[Math.cos(a)*q,Math.sin(a)*q];});
-const EM=[[cir(16,(c,k)=>[c*.05,k*.05]),cir(16,(c,k)=>[c*.028,k*.028])],[star(.07)],[[[.02,-.09],[-.035,.01],[.005,.01],[-.02,.09],[.04,-.015],[0,-.015],[.02,-.09]]],[[[0,-.07],[.055,0],[0,.08],[-.055,0],[0,-.07]],[[0,-.03],[.025,0],[0,.035],[-.025,0],[0,-.03]]]];
-const SC=[1,1.3,.75];
-const PARTS=[
-{n:'HELMET',vs:3,f:v=>{const L=ell(0,-.64,0,.12,.14,.13);L.push([[-.1,-.66,-.12],[.1,-.66,-.12]],[[-.08,-.62,-.125],[.08,-.62,-.125]]);
-  if(v==1)L.push(...both(s=>cyl(s*.07,-.8,0,0,.035,.14)));
-  if(v==2)L.push(...cyl(0,-.84,0,0,.03,.16),...both(s=>cyl(s*.11,-.77,0,0,.025,.12)));return L;}},
-{n:'CHEST',vs:3,f:v=>{const m=[1,.82,1.3][v];return[...ell(0,-.42,0,.2*m,.17,.11),...cyl(0,-.2,0,.15*m,.12*m,.24)];}},
-{n:'EMBLEM',vs:4,f:v=>EM[v].map(l=>l.map(q=>[q[0],-.42+q[1],-.125]))},
-{n:'SHOULDERS',vs:3,f:v=>[...both(s=>v==1?ell(s*.28,-.55,0,.11,.05,.1):ell(s*.27,-.52,0,.08,.08,.08)),...(v==2?both(s=>cyl(s*.28,-.64,0,0,.03,.11)):[])]},
-{n:'ARMS',vs:3,f:v=>{const m=SC[v];return both(s=>[...cyl(s*.31,-.36,0,.05*m,.045*m,.24),...cyl(s*.35,-.14,0,.045*m,.04*m,.2)]);}},
-{n:'GAUNTLETS',vs:3,f:v=>{const m=SC[v];return both(s=>[...cyl(s*.365,0,0,.06*m,.05*m,.13),...ell(s*.37,.1,0,.04,.05,.04),...(v==1?[cir(10,(c,k)=>[s*.37+c*.03,.1+k*.03,-.05])]:[])]);}},
-{n:'BELT',vs:2,f:v=>[...cyl(0,-.04,0,.15,.15,.06),...ell(0,-.04,-.15,.035,.035,.012)]},
-{n:'LEGS',vs:3,f:v=>{const m=SC[v];return both(s=>[...cyl(s*.09,.17,0,.08*m,.06*m,.34),...cyl(s*.09,.5,0,.06*m,.045*m,.34)]);}},
-{n:'BOOTS',vs:3,f:v=>{const m=SC[v];return both(s=>[...cyl(s*.09,.7,0,.055,.06*m,.1),...ell(s*.09,.78,-.025,.055*m,.05,.1)]);}},
-{n:'CAPE',vs:3,f:v=>{const e=[.15,.5,.8][v],H=e+.55,L=[];
-  for(let i=0;i<=6;i++){const x=-.27+i*.09,fl=1+H*.5;L.push([[x,-.55,.12],[x*fl,e,.12+H*.12]]);}
-  for(let j=1;j<=4;j++){const y=-.55+H*j/4,fl=1+H*.5*j/4,z=.12+H*.12*j/4;L.push([[-.27*fl,y,z],[.27*fl,y,z]]);}
-  return L;}}
-];
-const PRE={
- TECH:[[0,0],[0,0],[0,3],[0,1],[0,0],[1,1],[0,1],[0,0],[0,1],[0,0,0]],
- STEALTH:[[1,4],[1,4],[3,1],[0,4],[1,4],[1,4],[0,1],[1,4],[1,4],[1,4]],
- SPEED:[[2,0],[1,0],[2,1],[0,0],[2,0],[0,1],[0,1],[2,0],[2,1],[0,0,0]],
- GUARD:[[0,2],[2,2],[1,3],[1,3],[0,2],[1,3],[0,3],[0,2],[0,3],[0,0]]
+const CU=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+const SH={
+  cube:[[0,1,2,3,0],[4,5,6,7,4],[0,4],[1,5],[2,6],[3,7]].map(l=>l.map(i=>CU[i])),
+  pyr:(()=>{const b=[[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]],a=[0,-1.3,0];return [[...b,b[0]],...b.map(v=>[v,a])];})(),
+  orb:[cir(24,(c,s)=>[c,s,0]),cir(24,(c,s)=>[c,0,s]),cir(24,(c,s)=>[0,c,s])],
+  ring:[cir(28,(c,s)=>[c,s,0]),cir(28,(c,s)=>[c*.6,s*.6,0]),cir(28,(c,s)=>[c,0,s*.35])]
 };
-const mk=n=>PRE[n].map(a=>({v:a[0],c:a[1],on:a[2]!==0}));
-let suit=mk('TECH'),sel=0,yaw=0.5,zoom=1,solid=false,heroName='MY HERO';
 let sph={open:false,t:0,ch:-9999};
-let grab=null,two=null,claps=[],shocks=[],flash=0,peaceT=0;
+let objs=[{k:'cube',x:-.38,y:.05,z:0,s:.2,rx:.4,ry:.5,rz:0,c:0},{k:'ring',x:.35,y:-.1,z:.1,s:.22,rx:.9,ry:0,rz:0,c:1},{k:'orb',x:0,y:.38,z:-.1,s:.16,rx:0,ry:0,rz:0,c:2}];
+let sel=-1,grab=null,two=null,claps=[],shocks=[],flash=0,peaceT=0;
 let mic={ok:false,an:null,buf:null,lvl:0,floor:.01,sens:1,last:0};
 const SENS=[['LOW',.4],['MED',.24],['HIGH',.14]];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 async function initMic(){
   try{
@@ -152,83 +123,98 @@ function onClap(now){
   claps=claps.filter(c=>now-c<700);claps.push(now);
   if(claps.length>=2){setSphere(true,now);claps=[];}
 }
-function drawSuit(cx,cy,R,t,al){
-  const K=R*.95*zoom,co=Math.cos(yaw),si=Math.sin(yaw);
-  const P=p=>{const x=p[0]*co+p[2]*si,z=-p[0]*si+p[2]*co,f=1/(1+z*.25);return[cx+x*K*f,cy+p[1]*K*f];};
-  ctx.save();ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=12;ctx.lineWidth=1.5;
-  for(let i=0;i<2;i++){const k=(t*.5+i*.5)%1;ctx.globalAlpha=al*(1-k)*.8;ctx.beginPath();ctx.ellipse(cx,cy+K*.86,K*(.25+.3*k),K*(.06+.07*k),0,0,7);ctx.stroke();}
-  ctx.restore();
-  PARTS.forEach((pt,i)=>{
-    const st=suit[i];if(!st.on)return;
-    const col=OC[st.c],isSel=i===sel,L=pt.f(st.v);let sx=0,sy=0,n=0;
-    ctx.save();ctx.strokeStyle=col;ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=isSel?24:10;ctx.lineWidth=isSel?2.4:1.4;
-    for(const l of L){
-      ctx.globalAlpha=al;ctx.beginPath();
-      l.forEach((p,k)=>{const q=P(p);sx+=q[0];sy+=q[1];n++;if(k)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);});
-      ctx.stroke();
-      if(l.length>4){ctx.globalAlpha=al*(solid?.3:.07);ctx.fill();}
-    }
-    ctx.restore();
-    if(n){pt.cx=sx/n;pt.cy=sy/n;}
-    if(isSel&&n){ctx.save();ctx.globalAlpha=al;ctx.strokeStyle='#fff';ctx.lineWidth=1.5;reticle(pt.cx,pt.cy,26,t*2);ctx.restore();}
-  });
+function scr(o,cx,cy,R){const f=1/(1+o.z*0.3);return{x:cx+o.x*R*f,y:cy+o.y*R*f,f,r:o.s*R*f*1.5};}
+function rot(p,o){
+  let x=p[0],y=p[1],z=p[2],c=Math.cos(o.ry),s=Math.sin(o.ry),t;
+  t=x*c+z*s;z=-x*s+z*c;x=t;
+  c=Math.cos(o.rx);s=Math.sin(o.rx);t=y*c-z*s;z=y*s+z*c;y=t;
+  c=Math.cos(o.rz);s=Math.sin(o.rz);t=x*c-y*s;y=x*s+y*c;x=t;
+  return[x,y,z];
 }
-function pick(x,y,lim){
-  let bi=-1,bd=lim;
-  PARTS.forEach((pt,i)=>{if(!suit[i].on||pt.cx==null)return;const d=Math.hypot(pt.cx-x,pt.cy-y);if(d<bd){bd=d;bi=i;}});
-  return bi;
-}
-function interact(hs,dt){
-  const pins=[];
-  hs.forEach(H=>{if(H.pinch)pins.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2});});
-  peaceT=hs.some(H=>H.g==='PEACE')?peaceT+dt:0;
-  if(peaceT>600){suit[sel].c=(suit[sel].c+1)%OC.length;peaceT=-600;}
-  if(!pins.length){grab=null;two=null;return;}
-  if(pins.length>=2){
-    const d=Math.hypot(pins[0].x-pins[1].x,pins[0].y-pins[1].y);
-    if(two&&two>20)zoom=clamp(zoom*d/two,.6,1.7);
-    two=d;grab=null;return;
+function drawObj(o,isSel,cx,cy,R,a){
+  ctx.save();ctx.globalAlpha=a;ctx.strokeStyle=OC[o.c];ctx.shadowColor=OC[o.c];
+  ctx.shadowBlur=isSel?22:12;ctx.lineWidth=isSel?2.6:1.8;
+  for(const L of SH[o.k]){
+    ctx.beginPath();
+    L.forEach((p,i)=>{const q=rot(p,o);const X=o.x+q[0]*o.s,Y=o.y+q[1]*o.s,Z=o.z+q[2]*o.s,f=1/(1+Z*.3);
+      const sx=cx+X*R*f,sy=cy+Y*R*f;if(i)ctx.lineTo(sx,sy);else ctx.moveTo(sx,sy);});
+    ctx.stroke();
   }
-  two=null;const a=pins[0];
-  if(!grab){grab={x:a.x};const b=pick(a.x,a.y,70);if(b>=0)sel=b;}
-  else{yaw+=(a.x-grab.x)*0.012;grab.x=a.x;}
+  ctx.restore();
+}
+function spawn(k){
+  objs.push({k,x:(Math.random()-.5)*.5,y:(Math.random()-.5)*.5,z:0,s:.2,rx:Math.random()*2,ry:Math.random()*2,rz:0,c:ti%OC.length});
+  sel=objs.length-1;
+  if(objs.length>12){objs.shift();sel--;}
+}
+function interact(hs,cx,cy,R,dt){
+  const pins=[];
+  hs.forEach(H=>{if(H.pinch)pins.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2,palm:H.palm});});
+  peaceT=hs.some(H=>H.g==='PEACE')?peaceT+dt:0;
+  if(peaceT>600&&sel>=0&&objs[sel]){objs[sel].c=(objs[sel].c+1)%OC.length;peaceT=-600;}
+  if(!pins.length){grab=null;two=null;return;}
+  if(pins.length>=2&&sel>=0&&objs[sel]){
+    const a=pins[0],b=pins[1],d=Math.hypot(a.x-b.x,a.y-b.y),ang=Math.atan2(b.y-a.y,b.x-a.x),o=objs[sel];
+    if(two&&two.d>20){
+      o.s=clamp(o.s*d/two.d,0.05,0.6);
+      let da=ang-two.ang;if(da>Math.PI)da-=2*Math.PI;if(da<-Math.PI)da+=2*Math.PI;
+      o.rz+=da;
+    }
+    two={d,ang};grab=null;return;
+  }
+  two=null;
+  const a=pins[0];
+  if(!grab){
+    let best=-1,bd=1e9;
+    objs.forEach((o,i)=>{const q=scr(o,cx,cy,R),dd=Math.hypot(q.x-a.x,q.y-a.y);if(dd<q.r+40&&dd<bd){bd=dd;best=i;}});
+    if(best>=0){sel=best;const q=scr(objs[best],cx,cy,R);grab={ox:q.x-a.x,oy:q.y-a.y,z:objs[best].z,palm:a.palm};}
+  }else{
+    const o=objs[sel];if(!o){grab=null;return;}
+    o.z=clamp(grab.z-(a.palm/grab.palm-1)*1.4,-0.8,0.8);
+    const f=1/(1+o.z*0.3);
+    let nx=(a.x+grab.ox-cx)/(R*f),ny=(a.y+grab.oy-cy)/(R*f);
+    const m=Math.hypot(nx,ny,o.z),lim=0.92-o.s;
+    if(m>lim){nx*=lim/m;ny*=lim/m;o.z*=lim/m;}
+    o.x=nx;o.y=ny;
+  }
 }
 function workspace(w,h,t,dt,hs){
   dt=Math.min(dt,50);const now=t*1000;
   micTick(now);
-  const cx=w/2,cy=h/2,Rm=Math.min(w,h)*0.46;
+  const cx=w/2,cy=h/2,Rm=Math.min(w,h)*0.44;
   sph.t=clamp(sph.t+(sph.open?1:-1)*dt/700,0,1);
   const e=sph.t*sph.t*(3-2*sph.t),R=Rm*(0.13+0.87*e);
-  if(!grab)yaw+=dt*0.0005;
+  for(const o of objs)o.ry+=dt*0.0007;
   ctx.save();ctx.strokeStyle=C;ctx.fillStyle=C;ctx.shadowColor=C;ctx.shadowBlur=16;
   if(flash>0){ctx.globalAlpha=flash*0.3;ctx.beginPath();ctx.arc(cx,cy,R*1.05,0,7);ctx.fill();flash-=dt/250;}
-  ctx.globalAlpha=0.4-0.2*e+(1-e)*0.25*Math.sin(t*4);
+  ctx.globalAlpha=0.5-0.22*e+(1-e)*0.2*Math.sin(t*4);
   ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.stroke();
   ctx.lineWidth=1;
   for(let i=0;i<6;i++){const a=i*Math.PI/6+t*0.4;ctx.beginPath();ctx.ellipse(cx,cy,Math.abs(R*Math.cos(a))+0.5,R,0,0,7);ctx.stroke();}
   for(let j=-2;j<=2;j++){const la=j*0.5,rx=R*Math.cos(la);ctx.beginPath();ctx.ellipse(cx,cy+R*Math.sin(la),rx,rx*0.22,0,0,7);ctx.stroke();}
   shocks=shocks.filter(s=>now-s<900);
   for(const s of shocks){const k=(now-s)/900;ctx.globalAlpha=1-k;ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,Rm*(0.15+k),0,7);ctx.stroke();}
-  ctx.restore();
-  if(e>0.35){drawSuit(cx,cy,R,t,clamp((e-0.35)/0.65,0,1));if(e>0.9)interact(hs,dt);}
-  ctx.save();ctx.fillStyle=C;ctx.shadowColor=C;ctx.shadowBlur=8;ctx.font='11px ui-monospace,monospace';
-  ctx.textAlign='right';
-  ctx.fillText(sph.open?'CLAP ONCE TO CLOSE':(mic.ok?'CLAP TWICE':'MIC OFF'),w-22,40);
-  ctx.fillText(sph.open?'PINCH+DRAG ROTATE | 2 HANDS ZOOM':(mic.ok?'TO OPEN SUIT LAB':'USE SPHERE BUTTON'),w-22,56);
-  ctx.fillText('MIC '+SENS[mic.sens][0],w-22,76);
-  ctx.strokeStyle=C;ctx.lineWidth=1;ctx.strokeRect(w-122,82,100,6);ctx.fillRect(w-122,82,100*clamp(mic.lvl,0,1),6);
-  if(sph.open){
-    const P=PARTS[sel],st=suit[sel];ctx.textAlign='left';ctx.font='bold 12px ui-monospace,monospace';
-    ctx.fillText('SUIT LAB // '+heroName,22,40);ctx.font='11px ui-monospace,monospace';
-    ctx.fillText(P.n+(st.on?'':' (HIDDEN)'),22,56);ctx.fillText('STYLE '+(st.v+1)+'/'+P.vs,22,72);
-    ctx.fillStyle=OC[st.c];ctx.fillRect(22,80,34,8);
+  if(e>0.35){
+    const a=clamp((e-0.35)/0.65,0,1);
+    const order=objs.map((o,i)=>i).sort((x,y)=>objs[y].z-objs[x].z);
+    for(const i of order)drawObj(objs[i],i===sel,cx,cy,R,a);
+    if(sel>=0&&objs[sel]){
+      const q=scr(objs[sel],cx,cy,R);
+      ctx.globalAlpha=a;ctx.strokeStyle='#fff';ctx.fillStyle='#fff';ctx.lineWidth=1.5;
+      reticle(q.x,q.y,q.r+14,t*2);
+      ctx.font='12px ui-monospace,monospace';
+      ctx.fillText(objs[sel].k.toUpperCase()+'  x'+(objs[sel].s/0.2).toFixed(1),q.x-q.r,q.y+q.r+32);
+    }
+    if(e>0.9)interact(hs,cx,cy,R,dt);
   }
   ctx.restore();
-}
-function saveImg(){
-  cv.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement('a');
-    a.href=u;a.download=heroName.replace(/ /g,'-').toLowerCase()+'-suit.png';a.click();
-    setTimeout(()=>URL.revokeObjectURL(u),2000);});
+  // hints + mic meter
+  ctx.save();ctx.fillStyle=C;ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=8;ctx.textAlign='right';ctx.font='11px ui-monospace,monospace';
+  ctx.fillText(sph.open?'CLAP ONCE TO CLOSE':(mic.ok?'CLAP TWICE':'MIC OFF'),w-22,40);
+  ctx.fillText(sph.open?'PINCH GRAB | 2 HANDS SCALE':(mic.ok?'TO OPEN SPHERE':'USE SPHERE BUTTON'),w-22,56);
+  ctx.fillText('MIC '+SENS[mic.sens][0],w-22,76);
+  ctx.lineWidth=1;ctx.strokeRect(w-122,82,100,6);ctx.fillRect(w-122,82,100*clamp(mic.lvl,0,1),6);
+  ctx.restore();
 }
 
 function draw(now){
@@ -268,23 +254,20 @@ $('theme').onclick=()=>{ti=(ti+1)%THEMES.length;C=THEMES[ti];};
 $('sphere').onclick=()=>setSphere(!sph.open,performance.now());
 $('sens').onclick=()=>{mic.sens=(mic.sens+1)%3;$('sens').textContent='SENS: '+SENS[mic.sens][0];};
 $('tools').onclick=e=>{
-  const b=e.target.closest('button');if(!b)return;
-  const a=b.dataset.a,st=suit[sel],P=PARTS[sel];
-  if(a==='prev')sel=(sel+PARTS.length-1)%PARTS.length;
-  else if(a==='next')sel=(sel+1)%PARTS.length;
-  else if(a==='col')st.c=(st.c+1)%OC.length;
-  else if(a==='sty')st.v=(st.v+1)%P.vs;
-  else if(a==='vis')st.on=!st.on;
-  else if(a==='solid'){solid=!solid;b.textContent=solid?'GLOW':'SOLID';}
-  else if(a==='name'){const n=prompt('Hero name?',heroName);if(n)heroName=n.slice(0,16).toUpperCase();}
-  else if(a==='save')saveImg();
-  else if(PRE[a])suit=mk(a);
+  const b=e.target.closest('button');if(!b)return;const a=b.dataset.a;
+  if(a==='del'){if(sel>=0){objs.splice(sel,1);sel=-1;grab=null;two=null;}}
+  else if(a==='col'){if(sel>=0)objs[sel].c=(objs[sel].c+1)%OC.length;}
+  else if(a==='dup'){if(sel>=0){objs.push({...objs[sel],x:objs[sel].x+.12,y:objs[sel].y+.1});sel=objs.length-1;}}
+  else spawn(a);
 };
 cv.addEventListener('pointerdown',e=>{
   if(!sph.open||sph.t<.9)return;
   const r=cv.getBoundingClientRect(),k=Math.min(r.width/cv.width,r.height/cv.height);
   const x=(e.clientX-r.left-(r.width-cv.width*k)/2)/k,y=(e.clientY-r.top-(r.height-cv.height*k)/2)/k;
-  const b=pick(x,y,60);if(b>=0)sel=b;
+  const cx=cv.width/2,cy=cv.height/2,R=Math.min(cv.width,cv.height)*.44;
+  let best=-1,bd=1e9;
+  objs.forEach((o,i)=>{const q=scr(o,cx,cy,R),d=Math.hypot(q.x-x,q.y-y);if(d<q.r+30&&d<bd){bd=d;best=i;}});
+  sel=best;
 });
 </script>
 </body>
