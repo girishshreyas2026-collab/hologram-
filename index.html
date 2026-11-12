@@ -24,10 +24,10 @@
 <video id="video" playsinline muted></video>
 <canvas id="canvas"></canvas>
 <div id="status">HOLOGRAM INTERFACE OFFLINE</div>
-<div id="help">CLAP x2 = OPEN SPHERE &bull; CLAP x1 = CLOSE &bull; PINCH = GRAB &bull; PEACE = RECOLOR</div>
+<div id="help">CLAP x2 = OPEN SPHERE &bull; CLAP x1 = CLOSE &bull; PINCH = GRAB</div>
 <button id="start">START</button>
 <div id="tools"><button data-a="cube">+CUBE</button><button data-a="orb">+ORB</button><button data-a="pyr">+PYR</button><button data-a="ring">+RING</button><button data-a="col">COLOR</button><button data-a="dup">DUP</button><button data-a="del">DEL</button></div>
-<div id="bar"><button id="sphere">SPHERE</button><button id="theme">THEME</button><button id="clear">CLEAR</button><button id="flip">FLIP CAM</button><button id="sens">SENS: MED</button></div>
+<div id="bar"><button id="sphere">SPHERE</button><button id="theme">THEME</button><button id="flip">FLIP CAM</button><button id="sens">SENS: MED</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
 <script>
@@ -65,51 +65,16 @@ function drawBg(w,h,t){
   ctx.save();
   if(facing==='user'){ctx.translate(w,0);ctx.scale(-1,1);}
   ctx.drawImage(video,0,0,w,h);ctx.restore();
-  ctx.fillStyle='rgba(0,8,14,.76)';ctx.fillRect(0,0,w,h);
-  ctx.strokeStyle=C;ctx.globalAlpha=0.07;ctx.lineWidth=1;ctx.beginPath();
-  for(let x=0;x<w;x+=40){ctx.moveTo(x,0);ctx.lineTo(x,h);}
-  for(let y=0;y<h;y+=40){ctx.moveTo(0,y);ctx.lineTo(w,y);}
-  ctx.stroke();
-  ctx.globalAlpha=0.06;ctx.fillStyle='#000';
-  for(let y=0;y<h;y+=4)ctx.fillRect(0,y,w,1);
-  const sy=(t*110)%(h+80)-80;
-  const g=ctx.createLinearGradient(0,sy,0,sy+80);g.addColorStop(0,'transparent');g.addColorStop(1,C);
-  ctx.globalAlpha=0.12;ctx.fillStyle=g;ctx.fillRect(0,sy,w,80);
-  ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(0,8,14,.6)';ctx.fillRect(0,0,w,h);
 }
-
-function drawHand(H,idx,t){
+function drawHand(H){
   const p=H.p;
-  ctx.save();ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=18;ctx.lineWidth=3;ctx.lineCap='round';
-  // bones
+  ctx.save();ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=14;ctx.lineWidth=3;ctx.lineCap='round';
   ctx.beginPath();for(const[a,b]of CONN){ctx.moveTo(p[a].x,p[a].y);ctx.lineTo(p[b].x,p[b].y);}ctx.stroke();
-  // joints
   ctx.fillStyle='#fff';for(const q of p){ctx.beginPath();ctx.arc(q.x,q.y,3,0,7);ctx.fill();}
-  // palm rings
-  ctx.lineWidth=1.5;hex(H.cx,H.cy,H.palm*0.85,t*0.8);hex(H.cx,H.cy,H.palm*0.55,-t*1.2);
-  ctx.beginPath();ctx.arc(H.cx,H.cy,H.palm*1.1,0,7);ctx.setLineDash([4,10]);ctx.stroke();ctx.setLineDash([]);
-  // fingertip reticles + trails
-  for(const tp of TIPS){
-    ctx.lineWidth=2;reticle(p[tp].x,p[tp].y,H.palm*0.2+4,t*3+tp);
-    const k=idx+'-'+tp;const tr=trails[k]||(trails[k]=[]);tr.push({x:p[tp].x,y:p[tp].y});if(tr.length>16)tr.shift();
-    for(let i=1;i<tr.length;i++){ctx.globalAlpha=i/tr.length*0.7;ctx.lineWidth=1+i/4;ctx.beginPath();ctx.moveTo(tr[i-1].x,tr[i-1].y);ctx.lineTo(tr[i].x,tr[i].y);ctx.stroke();}
-    ctx.globalAlpha=1;
-    if(parts.length<500)for(let j=0;j<2;j++)parts.push({x:p[tp].x,y:p[tp].y,vx:(Math.random()-.5)*2.2,vy:(Math.random()-.5)*2.2-0.4,l:1});
-  }
-  // pinch line + orb
-  const a=p[4],b=p[8],d=D(a,b),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-  ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-  if(H.pinch){ctx.lineWidth=1.5;orb(mx,my,Math.max(d*0.9,10)+8,t);}
-  ctx.shadowBlur=8;ctx.fillStyle=C;ctx.font='13px ui-monospace,monospace';
-  ctx.fillText(Math.round(d)+'px',mx+10,my-8);
-  // gesture label
-  const lx=H.cx+H.palm*1.15,ly=H.cy-H.palm*1.1;
-  ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(H.cx,H.cy);ctx.lineTo(lx,ly);ctx.lineTo(lx+90,ly);ctx.stroke();
-  ctx.font='bold 14px ui-monospace,monospace';ctx.fillText(H.g,lx+4,ly-6);
-  ctx.font='11px ui-monospace,monospace';ctx.fillText('FINGERS: '+H.n,lx+4,ly+13);
+  if(H.pinch){ctx.lineWidth=2;ctx.beginPath();ctx.arc((p[4].x+p[8].x)/2,(p[4].y+p[8].y)/2,14,0,7);ctx.stroke();}
   ctx.restore();
 }
-
 /* ===== SPHERE WORKSPACE ===== */
 const OC=['#00e5ff','#ffb300','#39ff88','#ff3d6e','#c77dff','#ffffff'];
 const cir=(n,f)=>Array.from({length:n+1},(_,i)=>{const a=i/n*6.2832;return f(Math.cos(a),Math.sin(a));});
@@ -254,54 +219,12 @@ function workspace(w,h,t,dt,hs){
 
 function draw(now){
   const w=cv.width,h=cv.height,dt=now-last;last=now;
-  fps=fps*0.9+(1000/Math.max(dt,1))*0.1;
-  const t=now/1000;
+  const t=now/1000,mir=facing==='user';
   drawBg(w,h,t);
-  const mir=facing==='user';
-  const hs=latest.map(l=>analyze(l,w,h,mir));workspace(w,h,t,dt,hs);
-  // air drawing & fist clear
-  let fist=false,drew=false;
-  for(const H of hs){
-    if(H.fist)fist=true;
-    if(H.pinch&&!drew&&!sph.open){drew=true;const s=strokes[strokes.length-1];s.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2});if(s.length>600)s.shift();}
-  }
-  if(!drew&&strokes[strokes.length-1].length)strokes.push([]);
-  if(strokes.length>30)strokes.shift();
-  if(fist&&!sph.open){fistT+=dt;if(fistT>700){strokes=[[]];fistT=0;}}else fistT=0;
-  // strokes
-  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
-  for(const s of strokes){if(s.length<2)continue;
-    ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=18;ctx.lineWidth=5;
-    ctx.beginPath();ctx.moveTo(s[0].x,s[0].y);for(let i=1;i<s.length;i++)ctx.lineTo(s[i].x,s[i].y);ctx.stroke();
-    ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();}
-  ctx.restore();
-  // hands
-  hs.forEach((H,i)=>drawHand(H,i,t));
-  // two-hand link
-  if(hs.length>=2){
-    const a=hs[0].p[8],b=hs[1].p[8],d=D(a,b),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-    ctx.save();ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=16;ctx.lineWidth=2;
-    ctx.setLineDash([10,8]);ctx.lineDashOffset=-t*40;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
-    hex(mx,my,d*0.22+6,t);orb(mx,my,d*0.12+4,t*1.5);
-    ctx.fillStyle=C;ctx.font='13px ui-monospace,monospace';ctx.fillText('LINK '+Math.round(d)+'px',mx+d*0.25,my-d*0.25);
-    ctx.restore();
-  }
-  // particles
-  ctx.save();ctx.globalCompositeOperation='lighter';ctx.fillStyle=C;
-  for(let i=parts.length-1;i>=0;i--){const q=parts[i];q.x+=q.vx;q.y+=q.vy;q.l-=0.03;if(q.l<=0){parts.splice(i,1);continue;}
-    ctx.globalAlpha=q.l;ctx.fillRect(q.x,q.y,2.5,2.5);}
-  ctx.restore();
-  // HUD
-  ctx.save();ctx.strokeStyle=C;ctx.fillStyle=C;ctx.shadowColor=C;ctx.shadowBlur=10;ctx.lineWidth=2;
-  const m=14,L=34;bracket(m,m,1,1,L);bracket(w-m,m,-1,1,L);bracket(m,h-m,1,-1,L);bracket(w-m,h-m,-1,-1,L);
-  ctx.font='bold 15px ui-monospace,monospace';ctx.fillText('HOLO-OS // HAND TRACKER',m+8,m+26);
-  ctx.font='12px ui-monospace,monospace';
-  ctx.fillText('FPS  '+Math.round(fps),m+8,m+46);
-  ctx.fillText('HANDS '+hs.length,m+8,m+62);
-  hs.forEach((H,i)=>ctx.fillText('H'+(i+1)+': '+H.g,m+8,m+78+i*16));
-  ctx.restore();
+  const hs=latest.map(l=>analyze(l,w,h,mir));
+  workspace(w,h,t,dt,hs);
+  hs.forEach(drawHand);
 }
-
 async function startCamera(){
   if(stream)stream.getTracks().forEach(t=>t.stop());
   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false});
@@ -326,7 +249,7 @@ $('start').onclick=async()=>{
   }catch(e){$('status').textContent='CAMERA ERROR: '+e.message;$('start').style.display='block';}
 };
 $('flip').onclick=async()=>{facing=facing==='user'?'environment':'user';latest=[];trails={};await startCamera();};
-$('clear').onclick=()=>{strokes=[[]];parts=[];};
+
 $('theme').onclick=()=>{ti=(ti+1)%THEMES.length;C=THEMES[ti];};
 $('sphere').onclick=()=>setSphere(!sph.open,performance.now());
 $('sens').onclick=()=>{mic.sens=(mic.sens+1)%3;$('sens').textContent='SENS: '+SENS[mic.sens][0];};
