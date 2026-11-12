@@ -13,15 +13,21 @@
   #bar{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);left:0;right:0;display:none;justify-content:center;gap:10px}
   #bar button{color:#00e5ff;background:#00000088;border:1px solid #00e5ff;border-radius:18px;padding:10px 16px;font:13px ui-monospace,monospace;letter-spacing:1px}
   #help{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 70px);left:0;right:0;text-align:center;color:#00e5ffaa;font-size:11px;display:none;pointer-events:none;padding:0 16px}
+#bar{flex-wrap:wrap;gap:6px;padding:0 8px}
+#bar button{padding:8px 12px;font-size:12px}
+#help{bottom:calc(env(safe-area-inset-bottom,0px) + 150px)}
+#tools{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);left:0;right:0;display:none;justify-content:center;flex-wrap:wrap;gap:6px;padding:0 8px}
+#tools button{color:#fff;background:#000000aa;border:1px solid #00e5ffaa;border-radius:14px;padding:8px 11px;font:12px ui-monospace,monospace}
 </style>
 </head>
 <body>
 <video id="video" playsinline muted></video>
 <canvas id="canvas"></canvas>
 <div id="status">HOLOGRAM INTERFACE OFFLINE</div>
-<div id="help">PINCH = DRAW IN AIR &bull; FIST = CLEAR &bull; TWO HANDS = LINK</div>
+<div id="help">CLAP x2 = OPEN SPHERE &bull; CLAP x1 = CLOSE &bull; PINCH = GRAB &bull; PEACE = RECOLOR</div>
 <button id="start">START</button>
-<div id="bar"><button id="theme">THEME</button><button id="clear">CLEAR</button><button id="flip">FLIP CAM</button></div>
+<div id="tools"><button data-a="cube">+CUBE</button><button data-a="orb">+ORB</button><button data-a="pyr">+PYR</button><button data-a="ring">+RING</button><button data-a="col">COLOR</button><button data-a="dup">DUP</button><button data-a="del">DEL</button></div>
+<div id="bar"><button id="sphere">SPHERE</button><button id="theme">THEME</button><button id="clear">CLEAR</button><button id="flip">FLIP CAM</button><button id="sens">SENS: MED</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
 <script>
@@ -104,22 +110,164 @@ function drawHand(H,idx,t){
   ctx.restore();
 }
 
+/* ===== SPHERE WORKSPACE ===== */
+const OC=['#00e5ff','#ffb300','#39ff88','#ff3d6e','#c77dff','#ffffff'];
+const cir=(n,f)=>Array.from({length:n+1},(_,i)=>{const a=i/n*6.2832;return f(Math.cos(a),Math.sin(a));});
+const CU=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+const SH={
+  cube:[[0,1,2,3,0],[4,5,6,7,4],[0,4],[1,5],[2,6],[3,7]].map(l=>l.map(i=>CU[i])),
+  pyr:(()=>{const b=[[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]],a=[0,-1.3,0];return [[...b,b[0]],...b.map(v=>[v,a])];})(),
+  orb:[cir(24,(c,s)=>[c,s,0]),cir(24,(c,s)=>[c,0,s]),cir(24,(c,s)=>[0,c,s])],
+  ring:[cir(28,(c,s)=>[c,s,0]),cir(28,(c,s)=>[c*.6,s*.6,0]),cir(28,(c,s)=>[c,0,s*.35])]
+};
+let sph={open:false,t:0,ch:-9999};
+let objs=[{k:'cube',x:-.38,y:.05,z:0,s:.2,rx:.4,ry:.5,rz:0,c:0},{k:'ring',x:.35,y:-.1,z:.1,s:.22,rx:.9,ry:0,rz:0,c:1},{k:'orb',x:0,y:.38,z:-.1,s:.16,rx:0,ry:0,rz:0,c:2}];
+let sel=-1,grab=null,two=null,claps=[],shocks=[],flash=0,peaceT=0;
+let mic={ok:false,an:null,buf:null,lvl:0,floor:.01,sens:1,last:0};
+const SENS=[['LOW',.4],['MED',.24],['HIGH',.14]];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+async function initMic(){
+  try{
+    const st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended')await ac.resume();
+    mic.an=ac.createAnalyser();mic.an.fftSize=1024;
+    ac.createMediaStreamSource(st).connect(mic.an);
+    mic.buf=new Float32Array(1024);mic.ok=true;
+  }catch(e){mic.ok=false;}
+}
+function micTick(now){
+  if(!mic.ok)return;
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let pk=0,sum=0;for(const v of mic.buf){const a=Math.abs(v);if(a>pk)pk=a;sum+=v*v;}
+  const rms=Math.sqrt(sum/mic.buf.length);
+  mic.lvl=Math.max(pk,mic.lvl*0.9);
+  if(pk>Math.max(SENS[mic.sens][1],mic.floor*8)&&rms>0.012&&pk>rms*3.2&&now-mic.last>130){mic.last=now;onClap(now);}
+  mic.floor=mic.floor*0.99+rms*0.01;
+}
+function setSphere(o,now){
+  if(sph.open===o)return;
+  sph.open=o;sph.ch=now;shocks.push(now);grab=null;two=null;
+  $('tools').style.display=o?'flex':'none';
+}
+function onClap(now){
+  flash=1;
+  if(now-sph.ch<900)return;
+  if(sph.open){setSphere(false,now);claps=[];return;}
+  claps=claps.filter(c=>now-c<700);claps.push(now);
+  if(claps.length>=2){setSphere(true,now);claps=[];}
+}
+function scr(o,cx,cy,R){const f=1/(1+o.z*0.3);return{x:cx+o.x*R*f,y:cy+o.y*R*f,f,r:o.s*R*f*1.5};}
+function rot(p,o){
+  let x=p[0],y=p[1],z=p[2],c=Math.cos(o.ry),s=Math.sin(o.ry),t;
+  t=x*c+z*s;z=-x*s+z*c;x=t;
+  c=Math.cos(o.rx);s=Math.sin(o.rx);t=y*c-z*s;z=y*s+z*c;y=t;
+  c=Math.cos(o.rz);s=Math.sin(o.rz);t=x*c-y*s;y=x*s+y*c;x=t;
+  return[x,y,z];
+}
+function drawObj(o,isSel,cx,cy,R,a){
+  ctx.save();ctx.globalAlpha=a;ctx.strokeStyle=OC[o.c];ctx.shadowColor=OC[o.c];
+  ctx.shadowBlur=isSel?22:12;ctx.lineWidth=isSel?2.6:1.8;
+  for(const L of SH[o.k]){
+    ctx.beginPath();
+    L.forEach((p,i)=>{const q=rot(p,o);const X=o.x+q[0]*o.s,Y=o.y+q[1]*o.s,Z=o.z+q[2]*o.s,f=1/(1+Z*.3);
+      const sx=cx+X*R*f,sy=cy+Y*R*f;if(i)ctx.lineTo(sx,sy);else ctx.moveTo(sx,sy);});
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function spawn(k){
+  objs.push({k,x:(Math.random()-.5)*.5,y:(Math.random()-.5)*.5,z:0,s:.2,rx:Math.random()*2,ry:Math.random()*2,rz:0,c:ti%OC.length});
+  sel=objs.length-1;
+  if(objs.length>12){objs.shift();sel--;}
+}
+function interact(hs,cx,cy,R,dt){
+  const pins=[];
+  hs.forEach(H=>{if(H.pinch)pins.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2,palm:H.palm});});
+  peaceT=hs.some(H=>H.g==='PEACE')?peaceT+dt:0;
+  if(peaceT>600&&sel>=0&&objs[sel]){objs[sel].c=(objs[sel].c+1)%OC.length;peaceT=-600;}
+  if(!pins.length){grab=null;two=null;return;}
+  if(pins.length>=2&&sel>=0&&objs[sel]){
+    const a=pins[0],b=pins[1],d=Math.hypot(a.x-b.x,a.y-b.y),ang=Math.atan2(b.y-a.y,b.x-a.x),o=objs[sel];
+    if(two&&two.d>20){
+      o.s=clamp(o.s*d/two.d,0.05,0.6);
+      let da=ang-two.ang;if(da>Math.PI)da-=2*Math.PI;if(da<-Math.PI)da+=2*Math.PI;
+      o.rz+=da;
+    }
+    two={d,ang};grab=null;return;
+  }
+  two=null;
+  const a=pins[0];
+  if(!grab){
+    let best=-1,bd=1e9;
+    objs.forEach((o,i)=>{const q=scr(o,cx,cy,R),dd=Math.hypot(q.x-a.x,q.y-a.y);if(dd<q.r+40&&dd<bd){bd=dd;best=i;}});
+    if(best>=0){sel=best;const q=scr(objs[best],cx,cy,R);grab={ox:q.x-a.x,oy:q.y-a.y,z:objs[best].z,palm:a.palm};}
+  }else{
+    const o=objs[sel];if(!o){grab=null;return;}
+    o.z=clamp(grab.z-(a.palm/grab.palm-1)*1.4,-0.8,0.8);
+    const f=1/(1+o.z*0.3);
+    let nx=(a.x+grab.ox-cx)/(R*f),ny=(a.y+grab.oy-cy)/(R*f);
+    const m=Math.hypot(nx,ny,o.z),lim=0.92-o.s;
+    if(m>lim){nx*=lim/m;ny*=lim/m;o.z*=lim/m;}
+    o.x=nx;o.y=ny;
+  }
+}
+function workspace(w,h,t,dt,hs){
+  dt=Math.min(dt,50);const now=t*1000;
+  micTick(now);
+  const cx=w/2,cy=h/2,Rm=Math.min(w,h)*0.44;
+  sph.t=clamp(sph.t+(sph.open?1:-1)*dt/700,0,1);
+  const e=sph.t*sph.t*(3-2*sph.t),R=Rm*(0.13+0.87*e);
+  for(const o of objs)o.ry+=dt*0.0007;
+  ctx.save();ctx.strokeStyle=C;ctx.fillStyle=C;ctx.shadowColor=C;ctx.shadowBlur=16;
+  if(flash>0){ctx.globalAlpha=flash*0.3;ctx.beginPath();ctx.arc(cx,cy,R*1.05,0,7);ctx.fill();flash-=dt/250;}
+  ctx.globalAlpha=0.5-0.22*e+(1-e)*0.2*Math.sin(t*4);
+  ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.stroke();
+  ctx.lineWidth=1;
+  for(let i=0;i<6;i++){const a=i*Math.PI/6+t*0.4;ctx.beginPath();ctx.ellipse(cx,cy,Math.abs(R*Math.cos(a))+0.5,R,0,0,7);ctx.stroke();}
+  for(let j=-2;j<=2;j++){const la=j*0.5,rx=R*Math.cos(la);ctx.beginPath();ctx.ellipse(cx,cy+R*Math.sin(la),rx,rx*0.22,0,0,7);ctx.stroke();}
+  shocks=shocks.filter(s=>now-s<900);
+  for(const s of shocks){const k=(now-s)/900;ctx.globalAlpha=1-k;ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,Rm*(0.15+k),0,7);ctx.stroke();}
+  if(e>0.35){
+    const a=clamp((e-0.35)/0.65,0,1);
+    const order=objs.map((o,i)=>i).sort((x,y)=>objs[y].z-objs[x].z);
+    for(const i of order)drawObj(objs[i],i===sel,cx,cy,R,a);
+    if(sel>=0&&objs[sel]){
+      const q=scr(objs[sel],cx,cy,R);
+      ctx.globalAlpha=a;ctx.strokeStyle='#fff';ctx.fillStyle='#fff';ctx.lineWidth=1.5;
+      reticle(q.x,q.y,q.r+14,t*2);
+      ctx.font='12px ui-monospace,monospace';
+      ctx.fillText(objs[sel].k.toUpperCase()+'  x'+(objs[sel].s/0.2).toFixed(1),q.x-q.r,q.y+q.r+32);
+    }
+    if(e>0.9)interact(hs,cx,cy,R,dt);
+  }
+  ctx.restore();
+  // hints + mic meter
+  ctx.save();ctx.fillStyle=C;ctx.strokeStyle=C;ctx.shadowColor=C;ctx.shadowBlur=8;ctx.textAlign='right';ctx.font='11px ui-monospace,monospace';
+  ctx.fillText(sph.open?'CLAP ONCE TO CLOSE':(mic.ok?'CLAP TWICE':'MIC OFF'),w-22,40);
+  ctx.fillText(sph.open?'PINCH GRAB | 2 HANDS SCALE':(mic.ok?'TO OPEN SPHERE':'USE SPHERE BUTTON'),w-22,56);
+  ctx.fillText('MIC '+SENS[mic.sens][0],w-22,76);
+  ctx.lineWidth=1;ctx.strokeRect(w-122,82,100,6);ctx.fillRect(w-122,82,100*clamp(mic.lvl,0,1),6);
+  ctx.restore();
+}
+
 function draw(now){
   const w=cv.width,h=cv.height,dt=now-last;last=now;
   fps=fps*0.9+(1000/Math.max(dt,1))*0.1;
   const t=now/1000;
   drawBg(w,h,t);
   const mir=facing==='user';
-  const hs=latest.map(l=>analyze(l,w,h,mir));
+  const hs=latest.map(l=>analyze(l,w,h,mir));workspace(w,h,t,dt,hs);
   // air drawing & fist clear
   let fist=false,drew=false;
   for(const H of hs){
     if(H.fist)fist=true;
-    if(H.pinch&&!drew){drew=true;const s=strokes[strokes.length-1];s.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2});if(s.length>600)s.shift();}
+    if(H.pinch&&!drew&&!sph.open){drew=true;const s=strokes[strokes.length-1];s.push({x:(H.p[4].x+H.p[8].x)/2,y:(H.p[4].y+H.p[8].y)/2});if(s.length>600)s.shift();}
   }
   if(!drew&&strokes[strokes.length-1].length)strokes.push([]);
   if(strokes.length>30)strokes.shift();
-  if(fist){fistT+=dt;if(fistT>700){strokes=[[]];fistT=0;}}else fistT=0;
+  if(fist&&!sph.open){fistT+=dt;if(fistT>700){strokes=[[]];fistT=0;}}else fistT=0;
   // strokes
   ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
   for(const s of strokes){if(s.length<2)continue;
@@ -169,7 +317,7 @@ $('start').onclick=async()=>{
   $('start').style.display='none';$('status').textContent='LOADING MODEL...';
   try{
     await startCamera();
-    hands=new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/'+f});
+    initMic();hands=new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/'+f});
     hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:0.6,minTrackingConfidence:0.6});
     hands.onResults(r=>{latest=r.multiHandLandmarks||[];if(!running){running=true;$('status').style.display='none';}});
     $('bar').style.display='flex';$('help').style.display='block';
@@ -180,6 +328,24 @@ $('start').onclick=async()=>{
 $('flip').onclick=async()=>{facing=facing==='user'?'environment':'user';latest=[];trails={};await startCamera();};
 $('clear').onclick=()=>{strokes=[[]];parts=[];};
 $('theme').onclick=()=>{ti=(ti+1)%THEMES.length;C=THEMES[ti];};
+$('sphere').onclick=()=>setSphere(!sph.open,performance.now());
+$('sens').onclick=()=>{mic.sens=(mic.sens+1)%3;$('sens').textContent='SENS: '+SENS[mic.sens][0];};
+$('tools').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;const a=b.dataset.a;
+  if(a==='del'){if(sel>=0){objs.splice(sel,1);sel=-1;grab=null;two=null;}}
+  else if(a==='col'){if(sel>=0)objs[sel].c=(objs[sel].c+1)%OC.length;}
+  else if(a==='dup'){if(sel>=0){objs.push({...objs[sel],x:objs[sel].x+.12,y:objs[sel].y+.1});sel=objs.length-1;}}
+  else spawn(a);
+};
+cv.addEventListener('pointerdown',e=>{
+  if(!sph.open||sph.t<.9)return;
+  const r=cv.getBoundingClientRect(),k=Math.min(r.width/cv.width,r.height/cv.height);
+  const x=(e.clientX-r.left-(r.width-cv.width*k)/2)/k,y=(e.clientY-r.top-(r.height-cv.height*k)/2)/k;
+  const cx=cv.width/2,cy=cv.height/2,R=Math.min(cv.width,cv.height)*.44;
+  let best=-1,bd=1e9;
+  objs.forEach((o,i)=>{const q=scr(o,cx,cy,R),d=Math.hypot(q.x-x,q.y-y);if(d<q.r+30&&d<bd){bd=d;best=i;}});
+  sel=best;
+});
 </script>
 </body>
 </html>
